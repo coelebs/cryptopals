@@ -23,17 +23,17 @@ typedef struct {
 	std::string value;
 	int score;
 	unsigned char key;
-} scored_value;
+} scored_string;
 
 typedef struct {
 	int value;
 	int score;
-} scored_keysize;
+} scored_int;
 
 typedef struct {
 	std::vector<unsigned char> value;
 	int score;
-} scored_key;
+} scored_bytes;
 
 static const char USAGE[] = 
 R"(cryptopals
@@ -45,6 +45,7 @@ Usage:
 		cryptopals hamming <a> <b>
 		cryptopals challenge6 <file> <max keysize>
 		cryptopals challenge7 <file> <key>
+		cryptopals challenge8 <file> <blocksize>
 )";
 
 std::vector<unsigned char> hex_to_bytes(std::string hex) {
@@ -134,8 +135,8 @@ int score_string(std::string input) {
 }
 
 //Try all keys, one with highest score wins
-scored_value find_key(std::vector<unsigned char> input) {
-	scored_value result = {"", 0};
+scored_string find_key(std::vector<unsigned char> input) {
+	scored_string result = {"", 0};
 
 	for(size_t key = 0; key < 256; key++) {
 		std::vector<unsigned char> c = input ^ key;
@@ -156,12 +157,12 @@ scored_value find_key(std::vector<unsigned char> input) {
 
 //One line is single key encrypted
 //Try all keys on all lines, line+key combination with highest score wins
-std::vector<scored_value> score_file(std::vector< std::vector<unsigned char> > f) {
-	std::vector<scored_value> result;
+std::vector<scored_string> score_file(std::vector< std::vector<unsigned char> > f) {
+	std::vector<scored_string> result;
 	std::vector< std::vector<unsigned char> >::iterator iter;
 
 	for(iter = f.begin(); iter < f.end(); iter++) {
-		scored_value solution = find_key(*iter);	
+		scored_string solution = find_key(*iter);	
 		result.push_back(solution);	
 	}
 
@@ -188,15 +189,15 @@ int hamming(std::vector<unsigned char> a, std::vector<unsigned char> b) {
 //		perhaps with the smallest 2-3 KEYSIZE values. Or take 4 KEYSIZE blocks instead of 2 and average the
 //		distances. 
 //		Return multiple possible solutions
-std::vector<scored_keysize> find_keysize(std::vector<unsigned char> data, int max) {
-	std::vector<scored_keysize> result(1);
+std::vector<scored_int> find_keysize(std::vector<unsigned char> data, int max, int block_check) {
+	std::vector<scored_int> result(1);
 	result[0].score = INT_MAX; //Need to "seed" first on int max or otherwise there will never be a match
 
 	for(int keysize = MIN_KEYSIZE; keysize < max; keysize++) {
-		scored_keysize score = {keysize, 0};
+		scored_int score = {keysize, 0};
 		std::vector<int> scores;
 
-		for(int i = 0; i < KEYSIZE_BLOCK_CHECK; i++) {
+		for(int i = 0; i < block_check; i++) {
 			std::vector<unsigned char> a(data.begin() + (i*keysize),		data.begin() + ((i+1)*keysize));
 			std::vector<unsigned char> b(data.begin() + ((i+1)*keysize),	data.begin() + ((i+2)*keysize));	
 			scores.push_back(hamming(a,b));
@@ -220,9 +221,9 @@ std::vector<scored_keysize> find_keysize(std::vector<unsigned char> data, int ma
 //  Find the most probable keysize
 //  Try probable keysizes and score result
 //  Highest scored result is the answer
-scored_key find_repeating_key(std::vector<unsigned char> data, int keysize) {
+scored_bytes find_repeating_key(std::vector<unsigned char> data, int keysize) {
 	std::vector< std::vector<unsigned char> > sliced_data(keysize);
-	scored_key key;
+	scored_bytes key;
 
 	key.score = 0; //need to init @ 0 to compare 
 
@@ -237,7 +238,7 @@ scored_key find_repeating_key(std::vector<unsigned char> data, int keysize) {
 
 	for(std::vector< std::vector<unsigned char> >::iterator iter = sliced_data.begin(); iter < sliced_data.end(); iter++) {
 		int score;
-		scored_value decrypt_data = find_key(*iter);
+		scored_string decrypt_data = find_key(*iter);
 		key.value.push_back(decrypt_data.key);
 
 		score = decrypt_data.score * keysize; //Normalize to keysize, wrong way around but works...
@@ -280,6 +281,31 @@ std::vector<unsigned char> AES128ECB_decrypt(std::vector<unsigned char> cipherte
 	return plaintext;
 }
 
+int score_line(std::vector<unsigned char> line, int blocksize) {
+	int score = 0;
+	std::vector<int> scores;
+
+	for(size_t i = 0; i < line.size(); i += blocksize) {
+		for(size_t j = i + blocksize; j < line.size(); j += blocksize) {
+			std::vector<unsigned char> a(line.begin() + i,	line.begin() + (i + blocksize));
+			std::vector<unsigned char> b(line.begin() + j,	line.begin() + (j + blocksize));	
+
+			bool same = true;
+			for(size_t k = 0; k < a.size(); k++) {
+				if(a[k] != b[k]) {
+					same = false;
+				}
+			}
+
+			if(same) { 
+				score++;
+			}
+		}
+	}
+
+	return score;
+}
+
 std::string challenge2(std::string hexa, std::string hexb) {
 	std::vector<unsigned char> a = hex_to_bytes(hexa);
 	std::vector<unsigned char> b = hex_to_bytes(hexb);
@@ -288,20 +314,20 @@ std::string challenge2(std::string hexa, std::string hexb) {
 	return bytes_to_hex(c);
 }
 
-scored_value challenge3(std::string hexa) {
+scored_string challenge3(std::string hexa) {
 	std::vector<unsigned char> a = hex_to_bytes(hexa);
-	scored_value solution;
+	scored_string solution;
 	solution = find_key(a);
 	return solution;
 }
 
-scored_value challenge4(std::string file) {
+scored_string challenge4(std::string file) {
 	std::vector< std::vector<unsigned char> > byte_file = read_hex_file(file);
-	std::vector<scored_value> scored_file = score_file(byte_file);
+	std::vector<scored_string> scored_file = score_file(byte_file);
 
-	scored_value solution = {"", 0};
+	scored_string solution = {"", 0};
 
-	for(std::vector<scored_value>::iterator i = scored_file.begin(); i < scored_file.end(); i++) {
+	for(std::vector<scored_string>::iterator i = scored_file.begin(); i < scored_file.end(); i++) {
 		if(i->score > solution.score) {
 			solution = *i;
 		}
@@ -321,16 +347,16 @@ std::string challenge5(std::string hex_value, std::string hex_key) {
 
 std::string challenge6(std::string path, int max_keysize) {
 	std::vector<unsigned char> data;
-	std::vector<scored_keysize> keysize;
-	scored_key key;
+	std::vector<scored_int> keysize;
+	scored_bytes key;
 	std::vector<unsigned char> c;
 
 	data = read_base64_file(path);
-	keysize = find_keysize(data, max_keysize);
+	keysize = find_keysize(data, max_keysize, KEYSIZE_BLOCK_CHECK);
 
 	key.score = 0; //init
-	for(std::vector<scored_keysize>::iterator iter = keysize.begin(); iter < keysize.end(); iter++) {
-		scored_key possible = find_repeating_key(data, iter->value);
+	for(std::vector<scored_int>::iterator iter = keysize.begin(); iter < keysize.end(); iter++) {
+		scored_bytes possible = find_repeating_key(data, iter->value);
 
 		if(possible.score > key.score) {
 			key = possible;
@@ -359,6 +385,30 @@ std::string challenge7(std::string path, std::string key) {
 	return result;
 }
 
+scored_int challenge8(std::string path, int blocksize) {
+	std::vector< std::vector<unsigned char> > cipher_file;
+	std::vector<unsigned char> plaintext;
+	scored_int top_line;
+
+	cipher_file = read_hex_file(path);
+	top_line.score = 0;
+
+	int i = 0;
+	for(std::vector< std::vector<unsigned char> >::iterator iter = cipher_file.begin(); 
+			iter < cipher_file.end(); iter++) {
+		int score = score_line(*iter, blocksize);
+
+		if(score > top_line.score) {
+			top_line.score = score;
+			top_line.value = i;
+		}	
+
+		i++;
+	}
+
+	return top_line;
+}
+
 int main(int argc, const char** argv) {
 	std::map<std::string, docopt::value> args = 
 		docopt::docopt(USAGE, {argv+1, argv+argc}, true, "cryptopals set 1 challenge 2");
@@ -369,12 +419,12 @@ int main(int argc, const char** argv) {
 	}
 
 	if(args["challenge3"].asBool()) {
-		scored_value solution = challenge3(args["<a>"].asString());
+		scored_string solution = challenge3(args["<a>"].asString());
 		std::cout << solution.value << " (" << solution.score << ")" << std::endl;
 	}
 
 	if(args["challenge4"].asBool()) {
-		scored_value solution = challenge4(args["<file>"].asString());
+		scored_string solution = challenge4(args["<file>"].asString());
 		std::cout << solution.value << " (" << solution.score << ")" << std::endl;
 	}
 
@@ -401,5 +451,10 @@ int main(int argc, const char** argv) {
 	if(args["challenge7"].asBool()) {
 		std::string result = challenge7(args["<file>"].asString(), args["<key>"].asString());
 		std::cout << result << std::endl;
+	}
+
+	if(args["challenge8"].asBool()) {
+		scored_int result = challenge8(args["<file>"].asString(), args["<blocksize>"].asLong());
+		std::cout << "Line " << result.value << "\tScore " << result.score << std::endl;
 	}
 }
