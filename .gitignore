@@ -2,3 +2,5 @@ CMakeFiles
 CMakeCache.txt
 *.o
 cryptopals
+Makefile
+*.cmake

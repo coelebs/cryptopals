@@ -18,6 +18,7 @@
 #define LETTERS "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz "
 #define MIN_KEYSIZE 2   // min keysize is always 2, otherwise we're not searching for keysize
 #define KEYSIZE_BLOCK_CHECK 4
+#define BLOCKSIZE 16
 
 typedef struct {
 	std::string value;
@@ -38,15 +39,16 @@ typedef struct {
 static const char USAGE[] = 
 R"(cryptopals
 Usage:
-		cryptopals challenge2 <a> <b>
-		cryptopals challenge3 <a> 
-		cryptopals challenge4 <file> 
-		cryptopals challenge5 <value> <key>
-		cryptopals hamming <a> <b>
-		cryptopals challenge6 <file> <max keysize>
-		cryptopals challenge7 <file> <key>
-		cryptopals challenge8 <file> <blocksize>
-		cryptopals challenge9 <data> <blocksize>
+		cryptopals challenge2  <a> <b>
+		cryptopals challenge3  <a> 
+		cryptopals challenge4  <file> 
+		cryptopals challenge5  <value> <key>
+		cryptopals hamming     <a> <b>
+		cryptopals challenge6  <file> <max keysize>
+		cryptopals challenge7  <file> <key>
+		cryptopals challenge8  <file> <blocksize>
+		cryptopals challenge9  <data> <blocksize>
+		cryptopals challenge10 <file> <key>
 )";
 
 std::vector<unsigned char> hex_to_bytes(std::string hex) {
@@ -282,6 +284,79 @@ std::vector<unsigned char> AES128ECB_decrypt(std::vector<unsigned char> cipherte
 	return plaintext;
 }
 
+//Use the SSL library to encrypt a text with an AES128ECB cipher
+std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key) {
+	EVP_CIPHER_CTX *ctx;
+
+	std::vector<unsigned char> ciphertext(plaintext.size());
+	int len;
+
+	if(!(ctx = EVP_CIPHER_CTX_new())) std::cerr << "Unable to set up EVP cipher context" << std::endl;
+
+	if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, &key[0], NULL)) {
+		std::cerr << "Unable to initialize EVP cipher context" << std::endl;
+	}
+
+	if(1 != EVP_EncryptUpdate(ctx, &ciphertext[0], &len, &plaintext[0], plaintext.size())) {
+		std::cerr << "Unable to encrypt ciphertext" << std::endl;
+	}
+
+	if(1 != EVP_EncryptFinal_ex(ctx, &ciphertext[len], &len)) {
+		std::cerr << "Unable to finalize the decryption" << std::endl;	
+	}
+
+	if((size_t)len > plaintext.size()) {
+		std::cerr << "Overwritten buffer" << std::endl;
+	}
+
+	EVP_CIPHER_CTX_free(ctx);
+
+	return plaintext;
+}
+
+std::vector<unsigned char> CBC_decrypt(std::vector<unsigned char> ciphertext, std::vector<unsigned char> key) {
+	std::vector<unsigned char> plaintext;
+	std::vector<unsigned char> IV(BLOCKSIZE);
+
+	std::fill(IV.begin(), IV.end(), 0);
+
+	for(size_t i = 0; i < ciphertext.size(); i+= BLOCKSIZE) {
+		std::vector<unsigned char> cipherblock(ciphertext.begin() + i, ciphertext.begin() + i + BLOCKSIZE);
+
+		std::vector<unsigned char> plainblock = AES128ECB_decrypt(cipherblock, key);
+
+		plainblock = plainblock ^ IV;
+
+		plaintext.insert(plaintext.end(), plainblock.begin(), plainblock.end());
+
+		IV = cipherblock;
+	}
+
+	return plaintext;
+}
+
+std::vector<unsigned char> CBC_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key) {
+	std::vector<unsigned char> ciphertext;
+	std::vector<unsigned char> IV;	
+
+	std::fill(IV.begin(), IV.end(), 0);
+
+	for(size_t i = 0; i < plaintext.size(); i += BLOCKSIZE) {
+		std::vector<unsigned char> plainblock(plaintext.begin() + i, plaintext.begin() + i + BLOCKSIZE);
+
+		plainblock = plainblock ^ IV; 
+
+		std::vector<unsigned char> cipherblock = AES128ECB_encrypt(plainblock, key);
+
+		ciphertext.insert(ciphertext.begin(), cipherblock.begin(), cipherblock.end());
+
+		IV = cipherblock;
+	}
+	
+	return ciphertext;
+}
+
+//Score line, amount of recurring blocks as the deciding factor
 int score_line(std::vector<unsigned char> line, int blocksize) {
 	int score = 0;
 	std::vector<int> scores;
@@ -305,6 +380,37 @@ int score_line(std::vector<unsigned char> line, int blocksize) {
 	}
 
 	return score;
+}
+
+//Pad data with bytes to match blocksize
+//  Value of bytes is amount of blocks to pad
+std::vector<unsigned char> pkcs7_pad(std::vector<unsigned char> data, int blocksize) {
+	char padding;
+
+	padding = blocksize - (data.size() % blocksize);
+
+	for(unsigned char i = 0; i < padding; i++) {
+		data.push_back(padding);
+	}
+
+	return data;
+}
+
+//Print data in a pretty way to std::string
+std::string print_hex(std::vector<unsigned char> data) {
+	std::string result;
+	char *buffer;
+	size_t len;
+	FILE *fp;
+   
+	fp = open_memstream(&buffer, &len);
+	BIO_dump_fp(fp, (const char *)&data[0], data.size());
+	fclose(fp);
+
+	result += buffer;
+	free(buffer);
+
+	return result;
 }
 
 std::string challenge2(std::string hexa, std::string hexb) {
@@ -335,20 +441,6 @@ scored_string challenge4(std::string file) {
 	}
 
 	return solution;
-}
-
-//Pad data with bytes to match blocksize
-//  Value of bytes is amount of blocks to pad
-std::vector<unsigned char> pkcs7_pad(std::vector<unsigned char> data, int blocksize) {
-	char padding;
-
-	padding = blocksize - (data.size() % blocksize);
-
-	for(unsigned char i = 0; i < padding; i++) {
-		data.push_back(padding);
-	}
-
-	return data;
 }
 
 std::string challenge5(std::string hex_value, std::string hex_key) {
@@ -424,8 +516,16 @@ scored_int challenge8(std::string path, int blocksize) {
 	return top_line;
 }
 
-void print_hex(std::vector<unsigned char> data) {
-	BIO_dump_fp(stdout, (const char *)&data[0], data.size());
+std::string challenge10(std::string path, std::string key) {
+	std::vector<unsigned char> ciphertext = read_base64_file(path);
+	std::vector<unsigned char> keydata(key.begin(), key.end());
+	std::vector<unsigned char> plaintext;
+
+	plaintext = CBC_decrypt(ciphertext, keydata);
+
+	std::string result(plaintext.begin(), plaintext.end());
+
+	return result;
 }
 
 int main(int argc, const char** argv) {
@@ -481,8 +581,11 @@ int main(int argc, const char** argv) {
 		std::vector<unsigned char> data(args["<data>"].asString().begin(), args["<data>"].asString().end());
 		std::vector<unsigned char> result = pkcs7_pad(data, args["<blocksize>"].asLong());
 
-		print_hex(data);
-		std::cout << std::endl;
-		print_hex(result);
+		std::cout << print_hex(data) << std::endl << print_hex(result);
+	}
+
+	if(args["challenge10"].asBool()) {
+		std::string result = challenge10(args["<file>"].asString(), args["<key>"].asString());
+		std::cout << result << std::endl;
 	}
 }
