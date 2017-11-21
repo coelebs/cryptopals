@@ -1,6 +1,10 @@
 CMakeFiles
+test_set1
+test_set2
+Testing
 CMakeCache.txt
 *.o
+*.a
 cryptopals
 Makefile
 *.cmake

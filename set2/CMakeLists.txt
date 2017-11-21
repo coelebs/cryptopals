@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 3.9)
-project(cryptopals1.2)
+INCLUDE_DIRECTORIES(../libs/docopt.cpp ../libs/base64)
+LINK_DIRECTORIES(../libs/docopt.cpp ../libs/base64)
 
-INCLUDE_DIRECTORIES(../libs/docopt.cpp)
-LINK_DIRECTORIES(../libs/docopt.cpp)
+add_executable(cryptopals main.cpp)
+add_library(set2 set2.cpp)
 
-add_definitions(-Wall)
-add_executable(cryptopals main.cpp base64.cpp)
-TARGET_LINK_LIBRARIES(cryptopals docopt crypto)
+TARGET_LINK_LIBRARIES(cryptopals docopt crypto base64 set2)
+TARGET_LINK_LIBRARIES(set2 crypto base64)
+
+target_include_directories(set2 PUBLIC $(CMAKE_CURRENT_SOURCE_DIR))
