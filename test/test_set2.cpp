@@ -2,6 +2,8 @@
 
 #include "set2.h"
 
+bool VERBOSE = false;
+
 TEST(Set2, Challenge9) {
 	int blocksize = 10;
 
@@ -26,20 +28,43 @@ TEST(Set2, Challenge10) {
 
 	std::string input = "YELLOW SUBMARINEYELLOW SUBMARINE";
 	std::vector<unsigned char> plaintext(input.begin(), input.end());
-	std::vector<unsigned char> ciphertext = AES128CBC_encrypt(plaintext, key_data, IV);
+	std::vector<unsigned char> ciphertext;
+    ciphertext = AES128CBC_encrypt(plaintext, key_data, IV);
 	ASSERT_EQ(AES128CBC_decrypt(ciphertext, key_data, IV), plaintext);
 
+	ciphertext = AES128ECB_encrypt(plaintext, key_data, false);
+	ASSERT_EQ(AES128ECB_decrypt(ciphertext, key_data), plaintext);
+
 	ciphertext = read_base64_file(path);
+	std::fill(IV.begin(), IV.end(), 0);
 	plaintext = AES128CBC_decrypt(ciphertext, key_data, IV);
 	std::string result(plaintext.begin(), plaintext.end());
 
-	std::cerr << result << std::endl;
+	if(VERBOSE) { 
+		std::cerr << result << std::endl;
+	}
 }
 
 TEST(Set2, Challenge11) {
-	std::vector<unsigned char> plaintext(128);
+	int blocks = 24;
+	std::vector<unsigned char> plaintext(BLOCKSIZE * blocks);
+	std::vector<unsigned char> ciphertext(BLOCKSIZE * blocks);
+	int score;
 
-	//ASSERT_NE(encryption_oracle(plaintext), plaintext);
+	std::fill(plaintext.begin(), plaintext.end(), 0); //fill plaintext with repeating data
+
+	for(size_t i = 0; i < 10; i++) {
+		std::string method;
+		ciphertext = encryption_oracle(plaintext, &method);
+		score = score_line(ciphertext, BLOCKSIZE, false);
+		score /= blocks;
+
+		if(score > 1) { //we have matching blocks therefore ECB
+			EXPECT_EQ(method, "ECB");
+		} else {
+			EXPECT_EQ(method, "CBC");
+		}
+	}
 }
 
 int main(int argc, char **argv) {

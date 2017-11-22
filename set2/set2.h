@@ -62,7 +62,7 @@ std::vector<unsigned char> score_keysize(std::vector<unsigned char> data, int ma
 //Use the SSL library to decrypt a text with an AES128ECB cipher
 std::vector<unsigned char> AES128ECB_decrypt(std::vector<unsigned char> ciphertext, std::vector<unsigned char> key);
 //Use the SSL library to encrypt a text with an AES128ECB cipher
-std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key);
+std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key, bool pad=true);
 
 //decrypt using CBC block cipher mode
 //   Use the AES128ECB_decrypt to do the AES encryption
@@ -80,6 +80,6 @@ scored_int detect_ecb_line(std::vector< std::vector<unsigned char> > ciphertexts
 std::vector<unsigned char> pkcs7_pad(std::vector<unsigned char> data, int blocksize);
 //Print data in a pretty way to std::string
 std::string print_hex(std::vector<unsigned char> data);
-std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintext);
+std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintext, std::string *method = NULL);
 
 #endif

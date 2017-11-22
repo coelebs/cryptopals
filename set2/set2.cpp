@@ -15,6 +15,7 @@
 #include "docopt.h"
 
 #include <openssl/evp.h>
+#include <openssl/err.h>
 
 #include "set2.h"
 
@@ -251,19 +252,19 @@ std::vector<unsigned char> AES128ECB_decrypt(std::vector<unsigned char> cipherte
 	if(!(ctx = EVP_CIPHER_CTX_new())) std::cerr << "Unable to set up EVP cipher context" << std::endl;
 
 	if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, &key[0], NULL)) {
-		std::cerr << "Unable to initialize EVP cipher context" << std::endl;
+		ERR_print_errors_fp(stderr);
+	}
+
+	if(1 != EVP_CIPHER_CTX_set_padding(ctx, 0)) {
+		ERR_print_errors_fp(stderr);
 	}
 
 	if(1 != EVP_DecryptUpdate(ctx, &plaintext[0], &len, &ciphertext[0], ciphertext.size())) {
-		std::cerr << "Unable to decrypt ciphertext" << std::endl;
+		ERR_print_errors_fp(stderr);
 	}
 
 	if(1 != EVP_DecryptFinal_ex(ctx, &plaintext[len], &len)) {
-		std::cerr << "Unable to finalize the decryption" << std::endl;	
-	}
-
-	if((size_t)len > plaintext.size()) {
-		std::cerr << "Overwritten buffer" << std::endl;
+		ERR_print_errors_fp(stderr);
 	}
 
 	EVP_CIPHER_CTX_free(ctx);
@@ -272,35 +273,37 @@ std::vector<unsigned char> AES128ECB_decrypt(std::vector<unsigned char> cipherte
 }
 
 //Use the SSL library to encrypt a text with an AES128ECB cipher
-std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key) {
+std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key, bool pad) {
 	EVP_CIPHER_CTX *ctx;
+	int len, cipherlen = plaintext.size();
 
-	std::vector<unsigned char> ciphertext(plaintext.size() + (BLOCKSIZE));
-	int cipherlen, len;
+	if(pad) {
+		cipherlen += BLOCKSIZE;
+	}
+
+	std::vector<unsigned char> ciphertext(cipherlen);
 
 	if(!(ctx = EVP_CIPHER_CTX_new())) std::cerr << "Unable to set up EVP cipher context" << std::endl;
 
 	if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, &key[0], NULL)) {
-		std::cerr << "Unable to initialize EVP cipher context" << std::endl;
+		ERR_print_errors_fp(stderr);
+	}
+
+	if(!pad) {
+		if(1 != EVP_CIPHER_CTX_set_padding(ctx, 0)) {
+			ERR_print_errors_fp(stderr);
+		}
 	}
 
 	if(1 != EVP_EncryptUpdate(ctx, &ciphertext[0], &len, &plaintext[0], plaintext.size())) {
-		std::cerr << "Unable to encrypt ciphertext" << std::endl;
+		ERR_print_errors_fp(stderr);
 	}
-	cipherlen = len;
 	
 	if(1 != EVP_EncryptFinal_ex(ctx, &ciphertext[len], &len)) {
-		std::cerr << "Unable to finalize the encryption" << std::endl;	
-	}
-	cipherlen += len;
-
-	if((size_t)cipherlen > ciphertext.size()) {
-		std::cerr << "Overwritten buffer" << std::endl;
+		ERR_print_errors_fp(stderr);
 	}
 
 	EVP_CIPHER_CTX_free(ctx);
-
-	ciphertext.resize(cipherlen);
 
 	return ciphertext;
 }
@@ -330,12 +333,13 @@ std::vector<unsigned char> AES128CBC_decrypt(std::vector<unsigned char> cipherte
 std::vector<unsigned char> AES128CBC_encrypt(std::vector<unsigned char> plaintext, std::vector<unsigned char> key, std::vector<unsigned char> IV) {
 	std::vector<unsigned char> ciphertext;
 
+	//plaintext = pkcs7_pad(plaintext, BLOCKSIZE); //Because we do not know dat size, we need to pad
+
 	for(size_t i = 0; i < plaintext.size(); i += BLOCKSIZE) {
 		std::vector<unsigned char> plainblock(plaintext.begin() + i, plaintext.begin() + i + BLOCKSIZE);
 
 		std::vector<unsigned char> xorblock = plainblock ^ IV;
-		std::cout << xorblock.size() << std::endl;;
-		std::vector<unsigned char> cipherblock = AES128ECB_encrypt(xorblock, key);
+		std::vector<unsigned char> cipherblock = AES128ECB_encrypt(xorblock, key, false);
 		cipherblock.resize(BLOCKSIZE);
 
 		ciphertext.insert(ciphertext.end(), cipherblock.begin(), cipherblock.end());
@@ -356,10 +360,10 @@ int score_line(std::vector<unsigned char> line, int blocksize, bool use_hamming)
 			std::vector<unsigned char> a(line.begin() + i,	line.begin() + (i + blocksize));
 			std::vector<unsigned char> b(line.begin() + j,	line.begin() + (j + blocksize));	
 
-			bool same = true;
+			bool same = false;
 			for(size_t k = 0; k < a.size(); k++) {
-				if(a[k] != b[k]) {
-					same = false;
+				if(a[k] == b[k]) {
+					same = true;
 				}
 				scores.push_back(hamming(a, b));
 
@@ -429,7 +433,7 @@ std::string print_hex(std::vector<unsigned char> data) {
 }
 
 //Encrypt the plaintext with a random key, with a random IV padded with random data
-std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintext) {
+std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintext, std::string *method) {
 	std::vector<unsigned char> key(BLOCKSIZE);
 	std::vector<unsigned char> IV(BLOCKSIZE);
 	std::vector<unsigned char> ciphertext(BLOCKSIZE);
@@ -445,17 +449,17 @@ std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintex
 
 	rand_bytes.resize((mersenne_engine() % 5) + 5);
 	std::generate(rand_bytes.begin(), rand_bytes.end(), mersenne_engine);
-	std::fill(rand_bytes.begin(), rand_bytes.end(), 0);
 	plaintext.insert(plaintext.begin(), rand_bytes.begin(), rand_bytes.end());
 
 	rand_bytes.resize((mersenne_engine() % 5) + 5);
 	std::generate(rand_bytes.begin(), rand_bytes.end(), mersenne_engine);
-	std::fill(rand_bytes.begin(), rand_bytes.end(), 0);
 	plaintext.insert(plaintext.end(), rand_bytes.begin(), rand_bytes.end());
 
 	if(mersenne_engine() % 2 == 0) {
+		if(method != NULL) *method += "CBC";
 		ciphertext = AES128CBC_encrypt(plaintext, key, IV);
 	} else {
+		if(method != NULL) *method += "ECB";
 		ciphertext = AES128ECB_encrypt(plaintext, key);
 	}
 
