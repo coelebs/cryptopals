@@ -4,6 +4,8 @@
 #include <vector>
 #include <string> 
 
+#include "encryption_box.h"
+
 #define BLOCKSIZE			16
 #define KEYSIZE_BLOCK_CHECK 4
 
@@ -81,5 +83,9 @@ std::vector<unsigned char> pkcs7_pad(std::vector<unsigned char> data, int blocks
 //Print data in a pretty way to std::string
 std::string print_hex(std::vector<unsigned char> data);
 std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintext, std::string *method = NULL);
+
+
+int find_blocksize(std::vector<unsigned char> key);
+std::vector<unsigned char> crack_ecb_simple(EncryptionBox box);
 
 #endif

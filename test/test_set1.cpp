@@ -68,7 +68,7 @@ TEST(Set1, Challenge6) {
 	plaintext = score_keysize(data, 40, 4);
 
 	std::string result(plaintext.begin(), plaintext.end());
-	
+
 	std::cout << result << std::endl;
 }
 

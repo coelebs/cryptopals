@@ -95,6 +95,11 @@ std::vector<unsigned char> operator^(std::vector<unsigned char> a, char single_b
 	return a ^ b;
 }
 
+std::vector<unsigned char> slice(std::vector<unsigned char> input, size_t begin, size_t end) {
+	std::vector<unsigned char> sliced(input.begin() + begin, input.begin() + end);
+	return sliced;
+}
+
 //Score string as english by looking at how many letters it contains
 int score_string(std::string input) { 
 	int score = 0;
@@ -177,9 +182,10 @@ std::vector<scored_int> find_keysize(std::vector<unsigned char> data, int max, i
 			std::vector<unsigned char> b(data.begin() + ((i+1)*keysize),	data.begin() + ((i+2)*keysize));	
 			scores.push_back(hamming(a,b));
 		}
-
+		
 		score.score = std::accumulate(scores.begin(), scores.end(), 0) / scores.size(); 
 		score.score = score.score / keysize;
+		score.score = 10;
 
 		if(score.score == result[0].score) {
 			result.push_back(score);
@@ -227,7 +233,7 @@ scored_bytes find_repeating_key(std::vector<unsigned char> data, int keysize) {
 }
 
 std::vector<unsigned char> score_keysize(std::vector<unsigned char> data, int max_keysize, int block_check) {
-	std::vector<scored_int> keysize = find_keysize(data, max_keysize, KEYSIZE_BLOCK_CHECK);
+	std::vector<scored_int> keysize = find_keysize(data, max_keysize, block_check);
 	scored_bytes key;
 
 	key.score = 0; //init
@@ -239,7 +245,7 @@ std::vector<unsigned char> score_keysize(std::vector<unsigned char> data, int ma
 		}
 	}
 
-	return data ^ key.value;
+	return data;// ^ key.value;
 }
 
 //Use the SSL library to decrypt a text with an AES128ECB cipher
@@ -295,13 +301,18 @@ std::vector<unsigned char> AES128ECB_encrypt(std::vector<unsigned char> plaintex
 		}
 	}
 
+
 	if(1 != EVP_EncryptUpdate(ctx, &ciphertext[0], &len, &plaintext[0], plaintext.size())) {
 		ERR_print_errors_fp(stderr);
 	}
+	cipherlen = len;
 	
 	if(1 != EVP_EncryptFinal_ex(ctx, &ciphertext[len], &len)) {
 		ERR_print_errors_fp(stderr);
 	}
+	cipherlen += len;
+
+	ciphertext.resize(cipherlen);
 
 	EVP_CIPHER_CTX_free(ctx);
 
@@ -464,4 +475,61 @@ std::vector<unsigned char> encryption_oracle(std::vector<unsigned char> plaintex
 	}
 
 	return ciphertext;
+}
+
+int find_blocksize(EncryptionBox box) {
+	std::vector<unsigned char> plaintext;
+	std::vector<unsigned char> ciphertext;
+	int blocksize, prevsize = 0;
+
+
+	for(size_t i = 0; i < 32; i++) {
+		plaintext.assign(i, 0);
+		ciphertext = box.encrypt(plaintext);
+
+		if(prevsize != 0 && ciphertext.size() - prevsize > 1) {
+			blocksize = ciphertext.size() - prevsize;
+		}
+		prevsize = ciphertext.size();
+	}
+
+	return blocksize;
+}
+
+std::vector<unsigned char> crack_ecb_simple(EncryptionBox box) {
+	std::vector<unsigned char> plaintext, ciphertext, result;
+
+	int score, blocksize = find_blocksize(box);
+	bool ecb;
+
+	plaintext.assign(4 * blocksize, 0);
+	ciphertext = box.encrypt(plaintext);
+	score = score_line(ciphertext, blocksize);
+
+	ecb = score > 1;	
+
+	if(ecb) {
+		std::vector<std::vector<unsigned char>> dictionary;
+		plaintext.resize(blocksize);
+		plaintext.assign(blocksize, 'a');
+		auto test_cipher = box.encrypt(plaintext);
+
+		for(size_t i = 0; i < 255; i++) {
+			size_t index = blocksize - 1;
+			plaintext[index] = i;			
+			ciphertext = box.encrypt(plaintext);
+			dictionary.push_back(slice(ciphertext, 0, blocksize));
+		}
+
+		auto first_block = slice(test_cipher, 0, blocksize);
+		for(size_t i = 0; i < dictionary.size(); i++) {
+			if(dictionary[i] == first_block) {
+				result.push_back(i);
+			}
+		}
+	} else {
+		std::cout << "Not ECB" << std::endl;
+	}
+
+	return result;
 }

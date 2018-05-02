@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "base64.h"
+
 #include "set2.h"
+#include "encryption_box.h"
 
 bool VERBOSE = false;
 
@@ -65,6 +68,24 @@ TEST(Set2, Challenge11) {
 			EXPECT_EQ(method, "CBC");
 		}
 	}
+}
+
+TEST(Set2, Challenge12) {
+	std::string cipher_input = base64_decode("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK");
+	std::string key_input = "YELLOW SUBMARINE";
+
+	std::vector<unsigned char> ciphertext, 
+		plaintext(cipher_input.begin(), cipher_input.end()), 
+		key(key_input.begin(), key_input.end());
+
+	EncryptionBox box(key);
+	box.set_appendix(plaintext);
+
+	plaintext = crack_ecb_simple(box);
+
+	//std::string result(plaintext.begin(), plaintext.end());
+
+	//std::cout << result << std::endl;
 }
 
 int main(int argc, char **argv) {
